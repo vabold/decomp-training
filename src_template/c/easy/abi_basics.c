@@ -91,23 +91,108 @@ int abi_function_3(int a) {
 
 /* ================================================================ *
  *
- * Function prologues/epilogues and the Link Register
+ * Function prologues/epilogues, the stack, and the link register
  * (Function Prologue and Epilogue, ABI page 3-34)
+ * (The Stack Frame, ABI page 3-17)
  * 
- * TODO(fox): write this
+ * You may have noticed a pattern among the functions listed so far in
+ * that they all end in the "blr" opcode, and many of them contain a
+ * "mflr" towards the top and a "mtlr" towards the bottom. These
+ * opcodes all concern a special register called the *link register*,
+ * which holds the memory address of the previous function that called
+ * the function you're currently in. To explain it briefly:
+
+ * TODO(fox): the final file could have these be real addresses
+ *
+ * | // some_func
+ * | 0x80103F14 | add r3, r3, 0x5
+ * | 0x80103F18 | blr
+ *
+ * | // a bunch of code
+ * | 
+ * | // abi_function_4
+ * | 0x802D8910 | mflr r0
+ * | 0x802D8914 | stw r0, 0x4(r1)
+ * | 0x802D8918 | stwu r1, -0x8(r1)
+ * | 0x802D891C | bl 0x80103F14 // address of some_func
+ * | 0x802D8920 | lwz r0, 0xc(r1)
+ * | 0x802D8924 | addi r1, r1, 0x8
+ * | 0x802D8918 | mtlr r0
+ * | 0x802D891C | blr
+ *
+ * When the "bl 0x80103F14" instruction gets executed, the link
+ * register (LR) is automatically set with the address of the next
+ * instruction at 0x802D8920, which is "lwz r0, 0xc(r1)". Then once it
+ * hits the blr in "some_func" at 0x80103F18, it branches to the value
+ * at the LR (0x802D8920) and resumes where it left off in
+ * "abi_function_4."
+ *
+ * However you may be wondering, if the LR gets overwritten by the "bl
+ * 0x80103F14" in "abi_function_4," then what will happen to the LR
+ * that "abi_function_4" is currently holding? It won't be able to
+ * return to the function that's calling itself when it executes its
+ * "blr" if its LR gets overwritten! Luckily, that problem is exactly
+ * what all of the other instructions are addressing, which are a part
+ * of what is known as the "prologue" and "epilogue" that are executed
+ * at the beginning and end of a function respectively. 
+
+ * In the prologue, "mflr" moves the address in the LR to a register
+ * r0, which is then stored in what is known as the "stack" in the
+ * "stw". Note that r1 is a special register which holds the stack
+ * pointer, and its current value is required to be decremented and
+ * placed on the stack (in the "stwu"), which you can read more about
+ * on 3-34 of the ABI doc. Then in the epilogue, that address is
+ * loaded out from the stack back into r0 and moved back into the LR
+ * in the "lwz" and "mtlr" instructions, which allows the "blr" to
+ * successfully return to "abi_function_4"'s caller. 
+ *
+ * The reason "mflr" and "mtlr" don't show up in every function, as
+ * you may be able to guess, is that a function doesn't need to save
+ * and restore the LR unless it actually needs to (i.e. it calls a
+ * function), which is why some_func doesn't have them. 
  *
  * ================================================================ */
 
 void abi_function_4(float a) {
 }
 
+// TODO(fox): This should probably be combined with the branching
+// section. This is a more complicated example than using a single
+// conditional, but I think the multiple branches illustrates the
+// point better.
+
 /* ================================================================ *
  *
- * The stack (The Stack Frame, ABI page 3-17)
- * 
- * TODO(fox): write this
+ * Typically when a function has early returns, such as the cases in
+ * this switch statement in abi_function_6, they will branch to the
+ * epilogue. However if a function doesn't use the stack, the epilogue
+ * effectively turns into a single blr instruction. In this case, the
+ * compiler can perform an optimization where it replaces those
+ * epilogue branches with the epilogue itself and create multiple blrs
+ * in a single function.
+ *
+ * ================================================================ */
+
+void abi_function_6(int a) {
+}
+
+void abi_function_7(int a) {
+}
+
+/* ================================================================ *
+ *
+ * Besides saving/restoring the LR in the prologue/epilogue, the stack
+ * will also get used by normal code for various reasons when
+ * registers aren't enough to represent the data. Normally when you
+ * declare variables on "the stack" in C, the compiler will try to
+ * avoid actually implementing a stack and simply use registers.
+ * However one case where the compiler won't do that is if you declare
+ * a struct on the stack and you pass its address to a function, in
+ * which case it always implements a real stack. Typically you'll see
+ * this with math-related structs like Vec3 or Vec4 or Mtx.
  *
  * ================================================================ */
 
 void abi_function_5(float a) {
 }
+
